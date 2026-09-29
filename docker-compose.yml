@@ -1,0 +1,8 @@
+# Local development: builds the image from the Dockerfile and runs it
+services:
+  web:
+    build: .
+    container_name: devops-demo-local
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

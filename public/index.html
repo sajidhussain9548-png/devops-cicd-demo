@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release status</title>
+<style>
+  :root { --bg:#eef2f0; --ink:#14201b; --muted:#5b6b64; --line:#c9d3ce; --ok:#1f7a4d; --panel:#ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#101815; --ink:#e6efe9; --muted:#8fa199; --line:#2a3a33; --ok:#4cc38a; --panel:#17221d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--ink);
+         font-family: Georgia, "Times New Roman", serif; display:grid; place-items:center; padding:24px; }
+  main { width:100%; max-width:560px; }
+  h1 { font-size:2rem; margin:0 0 4px; font-weight:600; }
+  p.sub { margin:0 0 24px; color:var(--muted); }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+  .row { display:flex; justify-content:space-between; gap:16px; padding:14px 18px; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:0; }
+  .row span:first-child { color:var(--muted); }
+  .row span:last-child { font-family: ui-monospace, Menlo, Consolas, monospace; word-break:break-all; text-align:right; }
+  .live { color:var(--ok); }
+  :focus-visible { outline:2px solid var(--ok); outline-offset:2px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Release status</h1>
+  <p class="sub" id="sub">Checking the running container…</p>
+  <div class="panel" id="panel" aria-live="polite"></div>
+</main>
+<script>
+  const labels = { version:"Version", commit:"Commit", builtAt:"Built at", uptime:"Uptime" };
+  fetch("/api/info").then(r => r.json()).then(d => {
+    document.getElementById("sub").innerHTML = '<span class="live">Running</span> — served from a Docker container.';
+    const rows = { version:d.version, commit:d.commit, builtAt:d.builtAt, uptime:d.uptimeSeconds + " s" };
+    document.getElementById("panel").innerHTML = Object.entries(rows)
+      .map(([k,v]) => `<div class="row"><span>${labels[k]}</span><span>${String(v).replace(/</g,"&lt;")}</span></div>`).join("");
+  }).catch(() => { document.getElementById("sub").textContent = "Could not reach the API. Check that the container is healthy."; });
+</script>
+</body>
+</html>

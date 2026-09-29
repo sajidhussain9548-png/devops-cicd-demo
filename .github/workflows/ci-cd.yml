@@ -1,0 +1,79 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_NAME: devops-cicd-demo
+
+jobs:
+  # 1) CI: install and test on every push and pull request
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  # 2) Build the Docker image, scan it for vulnerabilities, push it to Docker Hub
+  build-scan-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name and tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "image=${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          docker build \
+            --build-arg APP_VERSION=${{ steps.meta.outputs.short_sha }} \
+            --build-arg GIT_COMMIT=${{ github.sha }} \
+            --build-arg BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -t ${{ steps.meta.outputs.image }} .
+
+      - name: Security scan with Trivy (fails on CRITICAL issues)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push image
+        run: |
+          docker push ${{ steps.meta.outputs.image }}
+          docker tag ${{ steps.meta.outputs.image }} ${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest
+
+  # 3) CD: your own laptop (self-hosted runner) pulls and runs the new image
+  #    Runs only after you set the repository variable ENABLE_DEPLOY = true
+  deploy:
+    needs: build-scan-push
+    if: vars.ENABLE_DEPLOY == 'true'
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy with automatic rollback
+        run: ./scripts/deploy.sh "${{ needs.build-scan-push.outputs.image }}"
